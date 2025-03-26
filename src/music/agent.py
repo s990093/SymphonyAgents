@@ -1,296 +1,82 @@
 # 標準函式庫
 import json
-from typing import Dict, List, Tuple
+from typing import Dict
 from music21 import *
+from src.music.model import PartData
 
 # 第三方函式庫
 
 # LangChain 相關
 from langchain_core.prompts import ChatPromptTemplate
-from langchain_google_genai import ChatGoogleGenerativeAI
 from langchain_core.output_parsers import JsonOutputParser
 
-# Pydantic 資料驗證
-from pydantic import BaseModel, Field
 
+# Pydantic 資料驗證
 # 音樂相關
 from music21 import stream  # 樂譜處理
 
-import traceback
 from rich.console import Console
-from rich.panel import Panel
+
+from src.music.musician_agent import MusicianAgent
 
 __all__ = [
-    'NoteData',
-    'PartData',
-    'MusicianAgent',
     'ViolinAgent',
     'ViolaAgent',
     'CelloAgent',
     'ClarinetAgent',
     'FluteAgent',
     'TrumpetAgent',
-    'TimpaniAgent'
+    'TimpaniAgent',
+    'PianistAgent'
 ]
-
-# 定義音樂數據的 Pydantic 模型
-class NoteData(BaseModel):
-    pitch: str = Field(description="音高，例如 'C4' 或 'G3'")
-    duration: float = Field(description="音符時長（以四分音符為單位），例如 1.0（四分音符）、2.0（二分音符）、4.0（全音符）")
-    technique: str = Field(default="arco", description="演奏技巧，例如 'arco'（拉弓）或 'pizz'（撥弦）")
-
-class PartData(BaseModel):
-    notes: List[NoteData] = Field(description="音符列表")
-    clef: str = Field(description="譜號，例如 'treble' 或 'bass'")
-    instrument: str = Field(description="樂器名稱，例如 'Cello' 或 'Piano RH'")
-
-class MusicianAgent:
-    """樂器代理基類，支援多種樂器及其特性"""
-    
-    def __init__(self, role: str, instrument_name: str, default_clef: str, techniques: List[str], pitch_range: Tuple[str, str]):
-        """
-        初始化樂器代理。
-        
-        參數：
-        - role: 樂器的角色（例如 "melody", "harmony"）
-        - instrument_name: 樂器名稱（例如 "Violin", "Flute"）
-        - default_clef: 預設譜號（例如 "treble", "bass", "alto"）
-        - techniques: 支援的演奏技巧列表（例如 ["arco", "pizz"]）
-        - pitch_range: 音域範圍（例如 ("G3", "E6")）
-        """
-        self.llm = ChatGoogleGenerativeAI(model="gemini-2.0-flash", temperature=0.5)
-        self.role = role
-        self.instrument_name = instrument_name
-        self.default_clef = default_clef
-        self.techniques = techniques
-        self.pitch_range = pitch_range  # (最低音高, 最高音高)
-        self.part = None
-        self.max_retries = 3
-
-    def generate_score(self, global_params: Dict, instruction: Dict) -> 'stream.Part':
-        """生成樂譜，具體實現由子類提供"""
-        raise NotImplementedError
-
-    def revise_score(self, global_params: Dict, feedback: Dict) -> 'stream.Part':
-        """根據指揮家反饋修改樂譜"""
-        prompt = ChatPromptTemplate.from_template("""
-        根據指揮家反饋修改樂譜：
-        
-        [原始樂譜]
-        {score}
-        
-        [反饋意見]
-        {feedback}
-        
-        [輸出要求]
-        請生成一個 JSON 格式的樂譜，符合以下結構：
-        {{
-            "notes": [
-                {{"pitch": "C4", "duration": 1.0, "technique": "{technique}"}},
-                ...
-            ],
-            "clef": "{clef}",
-            "instrument": "{instrument}"
-        }}
-        
-        [格式規則]
-        - pitch 使用 MIDI 音高表示法，音域為 {min_pitch} 到 {max_pitch}
-        - duration 以四分音符為單位（1.0 = 四分音符，2.0 = 二分音符，4.0 = 全音符）
-        - technique 可為 {techniques}
-        - 確保音高在樂器音域內
-        """)
-        
-        parser = JsonOutputParser()  # 假設 PartData 已定義為 Pydantic 模型
-        chain = prompt | self.llm | parser
-        response = chain.invoke({
-            "score": json.dumps(self._part_to_json(self.part)),
-            "feedback": feedback['message'],
-            "clef": self.default_clef,
-            "instrument": self.instrument_name,
-            "technique": self.techniques[0],  # 預設使用第一個技巧
-            "min_pitch": self.pitch_range[0],
-            "max_pitch": self.pitch_range[1],
-            "techniques": ", ".join(self.techniques)
-        })
-        self.part = self._json_to_part(response)
-        return self.part
-
-    def _part_to_json(self, part: 'stream.Part') -> Dict:
-        """將 music21 Part 轉換為 JSON"""
-        notes_data = []
-        for element in part.flat.notesAndRests:
-            if isinstance(element, note.Note):
-                technique = self._get_technique(element)
-                notes_data.append({
-                    "pitch": element.pitch.nameWithOctave,
-                    "duration": float(element.quarterLength),
-                    "technique": technique
-                })
-            elif isinstance(element, note.Rest):
-                notes_data.append({"pitch": "rest", "duration": float(element.quarterLength), "technique": "none"})
-            elif isinstance(element, chord.Chord):
-                pitches = [p.nameWithOctave for p in element.pitches]
-                technique = self._get_technique(element)
-                notes_data.append({
-                    "pitch": " ".join(pitches),
-                    "duration": float(element.quarterLength),
-                    "technique": technique
-                })
-        return {
-            "notes": notes_data,
-            "clef": part.clef.sign if part.clef else self.default_clef,
-            "instrument": self.instrument_name
-        }
-
-    def _get_technique(self, element) -> str:
-        """根據樂器支持的技巧獲取音符或和弦的演奏技巧"""
-        for art in element.articulations:
-            if isinstance(art, articulations.Pizzicato) and "pizz" in self.techniques:
-                return "pizz"
-            # 可根據需要擴展其他技巧的判斷邏輯
-        return self.techniques[0]  # 預設使用第一個技巧
-
-    def _json_to_part(self, data: Dict) -> 'stream.Part':
-        """將 JSON 轉換為 music21 Part"""
-        part = stream.Part()
-        part.insert(0, meter.TimeSignature("4/4"))  # 預設拍號
-        part.insert(0, key.KeySignature(0))  # 預設 C 大調
-        
-        # 設置譜號
-        if data["clef"].lower() == "bass":
-            part.insert(0, clef.BassClef())
-        elif data["clef"].lower() == "alto":
-            part.insert(0, clef.AltoClef())
-        elif data["clef"].lower() == "treble":
-            part.insert(0, clef.TrebleClef())
-        else:
-            part.insert(0, clef.TrebleClef())  # 預設高音譜號
-        
-        # 添加音符並檢查音域
-        min_pitch = pitch.Pitch(self.pitch_range[0])
-        max_pitch = pitch.Pitch(self.pitch_range[1])
-        for note_data in data["notes"]:
-            if note_data["pitch"] == "rest":
-                part.append(note.Rest(quarterLength=note_data["duration"]))
-            elif " " in note_data["pitch"]:
-                pitches = note_data["pitch"].split()
-                if all(min_pitch <= pitch.Pitch(p) <= max_pitch for p in pitches):
-                    ch = chord.Chord(pitches, quarterLength=note_data["duration"])
-                    if note_data["technique"] in self.techniques:
-                        self._apply_technique(ch, note_data["technique"])
-                    part.append(ch)
-                else:
-                    print(f"警告：和弦 {pitches} 超出 {self.instrument_name} 的音域 {self.pitch_range}")
-            else:
-                p = pitch.Pitch(note_data["pitch"])
-                if min_pitch <= p <= max_pitch:
-                    n = note.Note(note_data["pitch"], quarterLength=note_data["duration"])
-                    if note_data["technique"] in self.techniques:
-                        self._apply_technique(n, note_data["technique"])
-                    part.append(n)
-                else:
-                    print(f"警告：音高 {note_data['pitch']} 超出 {self.instrument_name} 的音域 {self.pitch_range}")
-        return part
-
-    def _apply_technique(self, element, technique: str):
-        """根據演奏技巧應用相應的標記"""
-        if technique == "pizz" and "pizz" in self.techniques:
-            element.articulations.append(articulations.Pizzicato())
-        # 可根據需要擴展其他技巧的應用，例如 "slur", "roll" 等
-        
-    def _parse_score(self, response: dict, retries: int = 0) -> 'stream.Part':
-        """解析並驗證生成的樂譜"""
-        console = Console()
-        try:
-            return self._json_to_part(response)
-        except Exception as e:
-            error_message = str(e)
-            # 取得完整的 traceback 資訊
-            tb_info = traceback.format_exc()
-            # 使用 Rich Panel 輸出錯誤資訊與 traceback，讓錯誤追蹤更加美觀
-            console.print(
-                Panel(
-                    f"[bold red]解析樂譜失敗[/bold red]：{error_message}\n\n[dim]{tb_info}[/dim]",
-                    title="[red]錯誤追蹤[/red]",
-                    border_style="red"
-                )
-            )
-            if retries < self.max_retries:
-                console.print(f"[yellow]重試第 {retries + 1} 次...[/yellow]")
-                revised_response = self._retry_generate(response, error_message)
-                return self._parse_score(revised_response, retries + 1)
-            else:
-                raise RuntimeError(f"達到最大重試次數 {self.max_retries}，無法生成有效的樂譜。")
-    
-
-    def _retry_generate(self, original_data: Dict, error_message: str) -> Dict:
-        """重試生成樂譜"""
-        retry_prompt = ChatPromptTemplate.from_template("""
-        之前的樂譜生成失敗，錯誤信息如下：
-        {error_message}
-        
-        原始樂譜數據：
-        {original_data}
-        
-        請修正並重新生成有效的 JSON 格式樂譜，符合以下結構：
-        {{
-            "notes": [
-                {{"pitch": "C4", "duration": 1.0, "technique": "{technique}"}},
-                ...
-            ],
-            "clef": "{clef}",
-            "instrument": "{instrument}"
-        }}
-        
-        [修正要求]
-        - pitch 使用 MIDI 音高表示法，音域為 {min_pitch} 到 {max_pitch}
-        - duration 以四分音符為單位
-        - technique 可為 {techniques}
-        - 確保音高在樂器音域內
-        """)
-        
-        parser = JsonOutputParser()
-        chain = retry_prompt | self.llm | parser
-        response = chain.invoke({
-            "error_message": error_message,
-            "original_data": json.dumps(original_data),
-            "clef": self.default_clef,
-            "instrument": self.instrument_name,
-            "technique": self.techniques[0],
-            "min_pitch": self.pitch_range[0],
-            "max_pitch": self.pitch_range[1],
-            "techniques": ", ".join(self.techniques)
-        })
-        return response
+console = Console()
 
 """提琴聲部代理"""
 
 class ViolinAgent(MusicianAgent):
-    """小提琴聲部代理"""
+    """
+    小提琴聲部代理
+
+    Attributes:
+        role (str): 演奏者的角色。
+        api_provider (str): API 提供者，例如 "openai" 或 "google"。
+        api_key (str): API 金鑰。
+    """
     
-    def __init__(self, role: str):
+    def __init__(self, role: str, api_provider: str, api_key: str):
+        """
+        初始化 ViolinAgent 實例。
+
+        Args:
+            role (str): 演奏者的角色，例如 "Violinist"。
+            api_provider (str): API 提供者名稱。
+            api_key (str): API 驗證金鑰。
+        """
         super().__init__(
             role=role,
-            instrument_name="Viola",
-            default_clef="alto",
+            instrument_name="Violin",
+            default_clef="treble",
             techniques=["arco", "pizz"],
-            pitch_range=("C3", "A5")
+            pitch_range=("G3", "E6"),
+            api_provider=api_provider,
+            api_key=api_key
         )
         
     def generate_score(self, global_params: Dict, instruction: Dict) -> 'stream.Part':
         prompt = ChatPromptTemplate.from_template("""
         作為{role}演奏家，請創作小提琴聲部，並以 JSON 格式輸出：
-        
+
         [參數]
         風格：{style}
         速度：{tempo}BPM
         調號：{key}
         拍號：{time_signature}
         技術重點：連奏與撥弦
-        
+
+
         [指令]
         {instruction}
-        
+
         [輸出要求]
         生成一個 JSON 對象，結構如下：
         {{
@@ -302,24 +88,25 @@ class ViolinAgent(MusicianAgent):
             "clef": "treble",
             "instrument": "Violin"
         }}
-        
+
         [格式規則]
         - pitch 使用 MIDI 音高表示法，音域為 G3 到 E6
         - duration 以四分音符為單位（1.0 = 四分音符，2.0 = 二分音符）
         - technique 可為 'arco'（拉弓）或 'pizz'（撥弦）
         - 可使用 "rest" 表示休止符
         - 總時長應符合拍號 {time_signature}
+        - 請確保旋律具有起承轉合的結構，避免單純的音階重複
         """)
         
         parser = JsonOutputParser(pydantic_object=PartData)
-        chain = prompt | self.llm | parser
+        chain = prompt | self.llm | parser 
         response = chain.invoke({
             "role": self.role,
             "style": global_params["style"],
             "tempo": global_params["tempo"],
             "key": global_params["key"],
             "time_signature": global_params["time_signature"],
-            "instruction": json.dumps(instruction, ensure_ascii=False)
+            "instruction": instruction.get("instruction", "")
         })
         self.part = self._parse_score(response)
         return self.part
@@ -327,49 +114,58 @@ class ViolinAgent(MusicianAgent):
 class ViolaAgent(MusicianAgent):
     """中提琴聲部代理"""
     
-    def __init__(self, role: str):
+    def __init__(self, role: str, api_provider: str, api_key: str):
         super().__init__(
             role=role,
             instrument_name="Viola",
             default_clef="alto",
             techniques=["arco", "pizz"],
-            pitch_range=("C3", "A5")
+            pitch_range=("C3", "A5"),
+            api_provider=api_provider,
+            api_key=api_key
         )
         
     def generate_score(self, global_params: Dict, instruction: Dict) -> 'stream.Part':
         prompt = ChatPromptTemplate.from_template("""
-        作為{role}演奏家，請創作中提琴聲部，並以 JSON 格式輸出：
-        
+        作為{role}演奏家，請創作小提琴聲部，並以 JSON 格式輸出：
+
         [參數]
         風格：{style}
         速度：{tempo}BPM
         調號：{key}
         拍號：{time_signature}
         技術重點：連奏與撥弦
-        
+
+
         [指令]
         {instruction}
-        
+
         [輸出要求]
         生成一個 JSON 對象，結構如下：
         {{
             "notes": [
-                {{"pitch": "C3", "duration": 1.0, "technique": "arco"}},
-                {{"pitch": "D3", "duration": 2.0, "technique": "pizz"}},
+                {{"pitch": "G3", "duration": 1.0, "technique": "arco"}},
+                {{"pitch": "A3", "duration": 2.0, "technique": "pizz"}},
                 ...
             ],
-            "clef": "alto",
-            "instrument": "Viola"
+            "clef": "treble",
+            "instrument": "Violin"
         }}
-        
+
         [格式規則]
-        - pitch 使用 MIDI 音高表示法，音域為 C3 到 A5
-        - duration 以四分音符為單位
+        - pitch 使用 MIDI 音高表示法，音域為 G3 到 E6
+        - duration 以四分音符為單位（1.0 = 四分音符，2.0 = 二分音符）
         - technique 可為 'arco'（拉弓）或 'pizz'（撥弦）
         - 可使用 "rest" 表示休止符
         - 總時長應符合拍號 {time_signature}
+        - 請確保旋律具有起承轉合的結構，避免單純的音階重複
         """)
-        
+
+        # 從 instruction 中獲取主題、和聲和動態信息，若無則使用默認值
+        theme_description = instruction.get("theme", "請創作一個具有特色的旋律動機")
+        harmonic_progression = instruction.get("harmonic_progression", "自由和聲進行")
+        dynamic_plan = instruction.get("dynamic_plan", "自由動態變化")
+
         parser = JsonOutputParser(pydantic_object=PartData)
         chain = prompt | self.llm | parser
         response = chain.invoke({
@@ -378,21 +174,27 @@ class ViolaAgent(MusicianAgent):
             "tempo": global_params["tempo"],
             "key": global_params["key"],
             "time_signature": global_params["time_signature"],
+            "theme_description": theme_description,
+            "harmonic_progression": harmonic_progression,
+            "dynamic_plan": dynamic_plan,
             "instruction": json.dumps(instruction, ensure_ascii=False)
         })
         self.part = self._parse_score(response)
         return self.part
     
+    
 class CelloAgent(MusicianAgent):
     """大提琴聲部代理"""
     
-    def __init__(self, role: str):
+    def __init__(self, role: str, api_provider: str, api_key: str):
         super().__init__(
             role=role,
             instrument_name="Cello",
             default_clef="bass",
             techniques=["arco", "pizz"],
-            pitch_range=("C2", "A3")
+            pitch_range=("C2", "A3"),
+            api_provider=api_provider,
+            api_key=api_key
         )
         
     def generate_score(self, global_params: Dict, instruction: Dict) -> 'stream.Part':
@@ -410,7 +212,7 @@ class CelloAgent(MusicianAgent):
         {instruction}
         
         [輸出要求]
-        生成一個 JSON 對象，結構如下：
+        請生成一個純粹的 JSON 對象，請勿包含任何註解或額外文字，輸出必須符合標準 JSON 格式。
         {{
             "notes": [
                 {{"pitch": "C2", "duration": 1.0, "technique": "arco"}},
@@ -421,12 +223,16 @@ class CelloAgent(MusicianAgent):
             "instrument": "Cello"
         }}
         
+        請嚴格依照此格式生成輸出，且不要包含任何註解或其他非 JSON 文本。
+
+        
         [格式規則]
         - pitch 使用 MIDI 音高表示法，音域為 C2 到 A3
         - duration 以四分音符為單位
         - technique 可為 'arco'（拉弓）或 'pizz'（撥弦）
         - 可使用 "rest" 表示休止符
         - 總時長應符合拍號 {time_signature}
+        - 請生成一個純粹的 JSON 對象，請勿包含任何註解或額外文字，輸出必須符合標準 JSON 格式。
         """)
         
         parser = JsonOutputParser(pydantic_object=PartData)
@@ -445,13 +251,15 @@ class CelloAgent(MusicianAgent):
 class ClarinetAgent(MusicianAgent):
     """單簧管聲部代理"""
     
-    def __init__(self, role: str):
+    def __init__(self, role: str, api_provider: str, api_key: str):
         super().__init__(
             role=role,
             instrument_name="Clarinet",
             default_clef="treble",
             techniques=["slur", "tongued"],
-            pitch_range=("E3", "C7")
+            pitch_range=("E3", "C7"),
+            api_provider=api_provider,
+            api_key=api_key
         )
         
     def generate_score(self, global_params: Dict, instruction: Dict) -> 'stream.Part':
@@ -486,6 +294,7 @@ class ClarinetAgent(MusicianAgent):
         - technique 可為 'slur'（連奏）或 'tongued'（跳舌）
         - 可使用 "rest" 表示休止符
         - 總時長應符合拍號 {time_signature}
+        - 請生成一個純粹的 JSON 對象，請勿包含任何註解或額外文字，輸出必須符合標準 JSON 格式。
         """)
         
         parser = JsonOutputParser(pydantic_object=PartData)
@@ -505,13 +314,15 @@ class ClarinetAgent(MusicianAgent):
     
 class FluteAgent(MusicianAgent):
     """長笛聲部代理"""
-    def __init__(self, role: str):
+    def __init__(self, role: str, api_provider: str, api_key: str):
         super().__init__(
             role=role,
             instrument_name="Flute",
             default_clef="treble",
             techniques=["slur", "tongued"],
-            pitch_range=("C4", "C7")
+            pitch_range=("C4", "C7"),
+            api_provider=api_provider,
+            api_key=api_key
         )
     
     def generate_score(self, global_params: Dict, instruction: Dict) -> 'stream.Part':
@@ -546,6 +357,7 @@ class FluteAgent(MusicianAgent):
         - technique 可為 'slur'（連奏）或 'tongued'（跳舌）
         - 可使用 "rest" 表示休止符
         - 總時長應符合拍號 {time_signature}
+        - 請生成一個純粹的 JSON 對象，請勿包含任何註解或額外文字，輸出必須符合標準 JSON 格式。
         """)
         
         parser = JsonOutputParser(pydantic_object=PartData)
@@ -565,13 +377,15 @@ class FluteAgent(MusicianAgent):
 class TrumpetAgent(MusicianAgent):
     """小號聲部代理"""
     
-    def __init__(self, role: str):
+    def __init__(self, role: str, api_provider: str, api_key: str):
         super().__init__(
             role=role,
             instrument_name="Trumpet",
             default_clef="treble",
             techniques=["slur", "tongued"],
-            pitch_range=("F#3", "C6")
+            pitch_range=("F#3", "C6"),
+            api_provider=api_provider,
+            api_key=api_key
         )
         
     def generate_score(self, global_params: Dict, instruction: Dict) -> 'stream.Part':
@@ -606,6 +420,7 @@ class TrumpetAgent(MusicianAgent):
         - technique 可為 'slur'（連奏）或 'tongued'（跳舌）
         - 可使用 "rest" 表示休止符
         - 總時長應符合拍號 {time_signature}
+        - 請生成一個純粹的 JSON 對象，請勿包含任何註解或額外文字，輸出必須符合標準 JSON 格式。
         """)
         
         parser = JsonOutputParser(pydantic_object=PartData)
@@ -625,13 +440,15 @@ class TrumpetAgent(MusicianAgent):
 class TimpaniAgent(MusicianAgent):
     """定音鼓聲部代理"""
     
-    def __init__(self, role: str):
+    def __init__(self, role: str, api_provider: str, api_key: str):
         super().__init__(
             role=role,
             instrument_name="Timpani",
             default_clef="bass",
             techniques=["roll", "strike"],
-            pitch_range=("C2", "C4")
+            pitch_range=("C2", "C4"),
+            api_provider=api_provider,
+            api_key=api_key
         )
     
     def generate_score(self, global_params: Dict, instruction: Dict) -> 'stream.Part':
@@ -666,7 +483,9 @@ class TimpaniAgent(MusicianAgent):
         - technique 可為 'roll'（滾奏）或 'strike'（單擊）
         - 可使用 "rest" 表示休止符
         - 總時長應符合拍號 {time_signature}
+        - 請生成一個純粹的 JSON 對象，請勿包含任何註解或額外文字，輸出必須符合標準 JSON 格式。
         """)
+        
         
         parser = JsonOutputParser(pydantic_object=PartData)
         chain = prompt | self.llm | parser
@@ -722,7 +541,8 @@ class CellistAgent(MusicianAgent):
         - technique 可為 'arco'（拉弓）或 'pizz'（撥弦）
         - 可使用 "rest" 表示休止符
         - 總時長應符合拍號 {time_signature}
-        
+        - 請生成一個純粹的 JSON 對象，請勿包含任何註解或額外文字，輸出必須符合標準 JSON 格式。
+
         [示例]
         {{
             "notes": [
@@ -753,120 +573,100 @@ class CellistAgent(MusicianAgent):
 class PianistAgent(MusicianAgent):
     """鋼琴聲部代理"""
     
+    def __init__(self, role: str, api_provider: str, api_key: str):
+        super().__init__(
+            role=role,
+            instrument_name="Piano",
+            default_clef="both",
+            techniques=[
+                "legato", 
+                "staccato", 
+                "pedal",
+                "chord",
+                "arpeggio"
+            ],
+            pitch_range=("A0", "C8"),
+            api_provider=api_provider,
+            api_key=api_key
+        )
+        
     def generate_score(self, global_params: Dict, instruction: Dict) -> 'stream.Part':
+        """
+        根據全局參數和指令生成鋼琴的樂譜。
+
+        Args:
+            global_params (Dict): 包含音樂創作的全局參數。
+            instruction (Dict): 包含具體的創作指令。
+
+        Returns:
+            stream.Part: 生成的鋼琴樂譜部分。
+        """
         prompt = ChatPromptTemplate.from_template("""
         作為{role}演奏家，請創作鋼琴聲部，並以 JSON 格式輸出：
-        
-        [創作參數]
+
+        [參數]
         風格：{style}
-        調性：{key}
-        速度：{tempo}
+        速度：{tempo}BPM
+        調號：{key}
         拍號：{time_signature}
-        
-        [結構要求]
+
+        [協調點]
+        {coordination_points}
+
+        [技術挑戰]
+        {technical_challenges}
+
+        [旋律位置]
+        {melody_position}
+
+        [指令]
         {instruction}
-        
+
+        [技術要求]
+        - 注意左右手的配合與平衡
+        - 和弦進行要符合和聲學原理
+        - 適當使用踏板標記
+        - 注意雙手交錯時的演奏可行性
+        - 確保旋律線條清晰
+        - 適當運用鋼琴的力度變化
+
         [輸出要求]
         生成一個 JSON 對象，結構如下：
         {{
             "notes": [
-                {{"pitch": "C4", "duration": 1.0, "technique": "arco"}},
-                {{"pitch": "E4 G4", "duration": 2.0, "technique": "arco"}},
+                {{"pitch": "C4", "duration": 1.0, "technique": "legato", "dynamic": "mf"}},
+                {{"pitch": "E4,G4,C5", "duration": 2.0, "technique": "chord", "dynamic": "f"}},
                 ...
             ],
-            "clef": "treble",  # 右手用高音譜號，左手用低音譜號
+            "clef": "both",
             "instrument": "Piano"
         }}
-        
+
         [格式規則]
-        - pitch 使用 MIDI 音高表示法，右手音域為 C4 到 C6，左手音域為 C2 到 C4
-        - duration 以四分音符為單位（1.0 = 四分音符，2.0 = 二分音符，4.0 = 全音符）
-        - technique 可為 'arco'（正常演奏），這裡僅作為佔位符，鋼琴無需特殊技巧
-        - 和弦用空格分隔多個音高（例如 "C4 E4 G4"）
+        - pitch 使用 MIDI 音高表示法，音域為 A0 到 C8
+        - duration 以四分音符為單位（1.0 = 四分音符，2.0 = 二分音符）
+        - technique 可為 "legato", "staccato", "pedal", "chord", "arpeggio"
+        - dynamic 可為 "pp", "p", "mp", "mf", "f", "ff"
         - 可使用 "rest" 表示休止符
+        - 和弦使用逗號分隔的音高列表
         - 總時長應符合拍號 {time_signature}
-        
-        [示例]
-        {{
-            "notes": [
-                {{"pitch": "C4", "duration": 1.0, "technique": "arco"}},
-                {{"pitch": "E4 G4", "duration": 2.0, "technique": "arco"}},
-                {{"pitch": "D4", "duration": 1.0, "technique": "arco"}}
-            ],
-            "clef": "treble",
-            "instrument": "Piano"
-        }}
         """)
         
         parser = JsonOutputParser(pydantic_object=PartData)
         chain = prompt | self.llm | parser
+        
         response = chain.invoke({
             "role": self.role,
             "style": global_params["style"],
-            "key": global_params["key"],
             "tempo": global_params["tempo"],
+            "key": global_params["key"],
             "time_signature": global_params["time_signature"],
-            "instruction": json.dumps(instruction, ensure_ascii=False)
+            "instruction": instruction.get("instruction", ""),
+            "coordination_points": instruction.get("coordination_points", ""),
+            "technical_challenges": instruction.get("technical_challenges", ""),
+            "melody_position": instruction.get("melody_position", "")
         })
+        
         self.part = self._parse_score(response)
         return self.part
 
-class ViolinistAgent(MusicianAgent):
-    """小提琴聲部代理"""
-    
-    def generate_score(self, global_params: Dict, instruction: Dict) -> 'stream.Part':
-        prompt = ChatPromptTemplate.from_template("""
-        作為{role}演奏家，請創作小提琴聲部，並以 JSON 格式輸出：
-        
-        [基本設置]
-        拍號：{time_signature}
-        調性：{key}
-        
-        [技術參數]
-        - 音域：G3到E6
-        - 技術要求：連奏與跳弓結合
-        
-        [創作指令]
-        {instruction}
-        
-        [輸出要求]
-        生成一個 JSON 對象，結構如下：
-        {{
-            "notes": [
-                {{"pitch": "G3", "duration": 1.0, "technique": "arco"}},
-                {{"pitch": "A3", "duration": 2.0, "technique": "pizz"}},
-                ...
-            ],
-            "clef": "treble",
-            "instrument": "Violin"
-        }}
-        
-        [格式規則]
-        - pitch 使用 MIDI 音高表示法，音域為 G3 到 E6
-        - duration 以四分音符為單位（1.0 = 四分音符，2.0 = 二分音符，4.0 = 全音符）
-        - technique 可為 'arco'（拉弓）或 'pizz'（撥弦）
-        - 可使用 "rest" 表示休止符
-        - 總時長應符合拍號 {time_signature}
-        
-        [示例]
-        {{
-            "notes": [
-                {{"pitch": "G3", "duration": 2.0, "technique": "arco"}},
-                {{"pitch": "A3", "duration": 1.0, "technique": "pizz"}},
-                {{"pitch": "B3", "duration": 1.0, "technique": "arco"}}
-            ],
-            "clef": "treble",
-            "instrument": "Violin"
-        }}
-        """)
-        
-        parser = JsonOutputParser(pydantic_object=PartData)
-        chain = prompt | self.llm | parser
-        response = chain.invoke({
-            "role": self.role,
-            "time_signature": global_params["time_signature"],
-            "key": global_params["key"],
-            "instruction": json.dumps(instruction, ensure_ascii=False)
-        })
-        self.part = self._parse_score(response)
-        return self.part

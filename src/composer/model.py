@@ -53,10 +53,9 @@ class PartInstruction(BaseModel):
     technical_challenges: List[str] = Field(description="技術難點提示，例如 ['rapid arpeggios in measure 4', 'high register sustain']")
 
 class FeedbackItem(BaseModel):
-    target: str = Field(description="目標樂器，例如 'cello'、'piano' 或 'violin'")
-    message: str = Field(description="建議內容，例如 'Cello 聲部音符數過少'")
+    target: str = Field(description="The target instrument name (e.g., 'violin', 'cello') to which the feedback applies.")
+    message: str = Field(description="Detailed feedback message in English, providing specific suggestions or issues for the target instrument.")
 
 class EvaluationResult(BaseModel):
-    passed: bool = Field(description="是否通過評估，true 表示通過，false 表示需要修正")
-    feedback: List[FeedbackItem] = Field(description="反饋列表，每項包含目標樂器和建議內容")
-    
+    passed: bool = Field(description="Indicates whether the score evaluation passed (true) or requires revision (false).")
+    feedback: List[FeedbackItem] = Field(description="A list of feedback items, each containing the target instrument and a detailed English suggestion or issue.")
