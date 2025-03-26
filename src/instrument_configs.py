@@ -4,11 +4,18 @@ from music21 import instrument
 
 instrument_configs = {
     "piano": {
-        "agent_class": "PianoAgent",
-        "default_clef": "treble",  # 鋼琴通常使用高音譜號（右手），低音譜號（左手）需額外處理
-        "techniques": ["normal"],  # 鋼琴無特殊技巧，統一為 "normal"
+        "agent_class": "PianistAgent",
+        "default_clef": "both",
+        "techniques": [
+            "legato",
+            "staccato",
+            "pedal",
+            "chord",
+            "arpeggio"
+        ],
         "pitch_range": ("A0", "C8"),
-        "music21_instrument": instrument.Piano()
+        "music21_instrument": instrument.Piano(),
+    
     },
     "violin": {
         "agent_class": "ViolinAgent",

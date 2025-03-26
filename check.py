@@ -3,7 +3,6 @@ import os
 import subprocess
 from src.music.music_player import MusicPlayer
 
-
 def check_python_version():
     """檢查 Python 版本是否大於等於 3.11"""
     version = sys.version_info

@@ -244,41 +244,41 @@ class ConductorAgent:
                 padding=(0, 1)
             ))
 
-        # 階段 5：評估與修正
-        if not dev_mode or start_from in ["design_framework", "plan_composition", "generate_instructions", "generate_scores", "evaluate_and_revise"]:
-            evaluation = self.score_evaluator.evaluate_score(self.score_drafts, self.musicians)
-            attempt = 1
-            while not evaluation["passed"]:
-                console.print(f"[bold yellow]⚠️ 樂譜需要修正 (嘗試 {attempt})[/bold yellow]")
-                for feedback in evaluation["feedback"]:
-                    target_inst = feedback["target"]
-                    if target_inst in self.musicians:
-                        console.log(f"正在修正 -> {target_inst}")
-                        self.score_drafts[target_inst] = self.musicians[target_inst].revise_score(
-                            self.params, feedback, self.score_drafts[target_inst]
-                        )
-                    else:
-                        console.print(f"[yellow]忽略無效目標 '{target_inst}' 的反饋[/yellow]")
+        # # 階段 5：評估與修正
+        # if not dev_mode or start_from in ["design_framework", "plan_composition", "generate_instructions", "generate_scores", "evaluate_and_revise"]:
+        #     evaluation = self.score_evaluator.evaluate_score(self.score_drafts, self.musicians)
+        #     attempt = 1
+        #     while not evaluation["passed"]:
+        #         console.print(f"[bold yellow]⚠️ 樂譜需要修正 (嘗試 {attempt})[/bold yellow]")
+        #         for feedback in evaluation["feedback"]:
+        #             target_inst = feedback["target"]
+        #             if target_inst in self.musicians:
+        #                 console.log(f"正在修正 -> {target_inst}")
+        #                 self.score_drafts[target_inst] = self.musicians[target_inst].revise_score(
+        #                     self.params, feedback, self.score_drafts[target_inst]
+        #                 )
+        #             else:
+        #                 console.print(f"[yellow]忽略無效目標 '{target_inst}' 的反饋[/yellow]")
                 
-                # 先生成 MIDI 文件
-                midi_file = f"fixup_song_{attempt}"
-                self.player.generate_midi(self.score_drafts, midi_file)
-                console.print(f"[bold cyan]已生成 MIDI 文件：{midi_file}.mid[/bold cyan]")
+        #         # 先生成 MIDI 文件
+        #         midi_file = f"fixup_song_{attempt}"
+        #         self.player.generate_midi(self.score_drafts, midi_file)
+        #         console.print(f"[bold cyan]已生成 MIDI 文件：{midi_file}.mid[/bold cyan]")
                 
-                # 詢問用戶是否繼續修正
-                continue_fixing = Confirm.ask("請檢查生成的 MIDI 文件。你想繼續修正樂譜嗎？", default=True)
-                if not continue_fixing:
-                    console.print("[bold green]用戶選擇停止修正，當前版本已保存。[/bold green]")
-                    break
+        #         # 詢問用戶是否繼續修正
+        #         continue_fixing = Confirm.ask("請檢查生成的 MIDI 文件。你想繼續修正樂譜嗎？", default=True)
+        #         if not continue_fixing:
+        #             console.print("[bold green]用戶選擇停止修正，當前版本已保存。[/bold green]")
+        #             break
                 
-                # 如果繼續，重新評估
-                evaluation = self.score_evaluator.evaluate_score(self.score_drafts, self.musicians)
-                attempt += 1
+        #         # 如果繼續，重新評估
+        #         evaluation = self.score_evaluator.evaluate_score(self.score_drafts, self.musicians)
+        #         attempt += 1
             
-            # 最終通過或用戶停止時顯示訊息
-            if evaluation["passed"]:
-                console.print("[bold green]🎉 樂譜最終版本通過審核！[/bold green]")
-            else:
-                console.print("[yellow]修正流程已終止，未完全通過審核。[/yellow]")
+        #     # 最終通過或用戶停止時顯示訊息
+        #     if evaluation["passed"]:
+        #         console.print("[bold green]🎉 樂譜最終版本通過審核！[/bold green]")
+        #     else:
+        #         console.print("[yellow]修正流程已終止，未完全通過審核。[/yellow]")
 
         return self.score_drafts
