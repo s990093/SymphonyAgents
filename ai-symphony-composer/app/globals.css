@@ -1,0 +1,349 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+html,
+body {
+  margin: 0;
+  font-family: sans-serif;
+}
+
+#app {
+  width: 100vw;
+  height: 100vh;
+}
+
+/* 基本節點樣式 */
+.custom-node {
+  background: #fff;
+  border: 2px solid #ccc;
+  border-radius: 8px;
+  padding: 10px;
+  min-width: 120px;
+  transition: box-shadow 0.3s ease;
+}
+
+/* 參數區塊 */
+.custom-node .params {
+  margin-top: 6px;
+  font-size: 12px;
+}
+
+/* 執行中（呼吸燈效果） */
+.custom-node.in-progress {
+  box-shadow: 0 0 8px 2px rgba(0, 255, 0, 0.4);
+  animation: breathing 2s infinite;
+}
+
+@keyframes breathing {
+  0% {
+    box-shadow: 0 0 8px 2px rgba(0, 255, 0, 0.4);
+  }
+  50% {
+    box-shadow: 0 0 16px 4px rgba(0, 255, 0, 0.7);
+  }
+  100% {
+    box-shadow: 0 0 8px 2px rgba(0, 255, 0, 0.4);
+  }
+}
+
+/* 已完成狀態 */
+.custom-node.completed {
+  background-color: #d4edda; /* 淡綠色 */
+  border-color: #28a745; /* 綠色 */
+}
+
+/* 全域的 React Flow 邊線 (預設 edge path) */
+.react-flow__edge-path {
+  stroke: #999;
+  stroke-width: 2px;
+  stroke-dasharray: 6;
+  animation: dash 2s linear infinite;
+}
+
+@keyframes dash {
+  to {
+    stroke-dashoffset: -100;
+  }
+}
+
+:root {
+  --color-amber: #ffc107;
+  --color-blue: #03a9f4;
+  --color-green: #8bc34a;
+  --color-pink: #e91e63;
+  --node-width: 240px;
+  --node-radius: 8px;
+  --transition: all 0.3s ease;
+}
+
+.custom-node {
+  position: relative;
+  width: var(--node-width);
+  background: white;
+  border-radius: var(--node-radius);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+  transition: var(--transition);
+  overflow: hidden;
+  font-family: "Segoe UI", sans-serif;
+}
+
+/* 头部样式 */
+.node-header {
+  padding: 12px 16px;
+  color: white;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.node-label {
+  font-size: 14px;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.2);
+}
+
+.status-icon {
+  font-size: 16px;
+  animation: pulse 1.5s infinite;
+}
+
+/* 参数区域 */
+.params-container {
+  padding: 12px;
+  background: #f8f9fa;
+}
+
+.param-item {
+  display: flex;
+  justify-content: space-between;
+  padding: 4px 0;
+  font-size: 12px;
+}
+
+.param-key {
+  color: #666;
+}
+
+.param-value {
+  color: #333;
+  font-weight: 500;
+}
+
+/* 状态动画 */
+.custom-node.pending {
+  opacity: 0.8;
+  filter: grayscale(0.3);
+}
+
+.custom-node.inProgress .node-header {
+  animation: colorWave 2s infinite;
+}
+
+.custom-node.completed {
+  box-shadow: 0 4px 16px rgba(var(--color-green), 0.2);
+}
+
+/* 连接点样式 */
+.node-handle {
+  width: 12px;
+  height: 12px;
+  border: 2px solid white;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
+  transition: var(--transition);
+}
+
+.node-handle:hover {
+  transform: scale(1.2);
+}
+
+/* 动画定义 */
+@keyframes pulse {
+  0% {
+    transform: scale(1);
+  }
+  50% {
+    transform: scale(1.1);
+  }
+  100% {
+    transform: scale(1);
+  }
+}
+
+@keyframes colorWave {
+  0% {
+    filter: brightness(1);
+  }
+  50% {
+    filter: brightness(1.1);
+  }
+  100% {
+    filter: brightness(1);
+  }
+}
+
+/* 不同类别特殊样式 */
+.custom-node.reflect .node-header {
+  background-image: linear-gradient(
+    45deg,
+    rgba(255, 255, 255, 0.1) 25%,
+    transparent 25%,
+    transparent 50%,
+    rgba(255, 255, 255, 0.1) 50%,
+    rgba(255, 255, 255, 0.1) 75%,
+    transparent 75%
+  );
+  background-size: 40px 40px;
+  animation: reflectStripes 3s linear infinite;
+}
+
+@keyframes reflectStripes {
+  0% {
+    background-position: 0 0;
+  }
+  100% {
+    background-position: 40px 40px;
+  }
+}
+
+.custom-node.output .param-value {
+  color: var(--color-green);
+}
+
+.custom-node.process .param-value {
+  color: var(--color-blue);
+}
+/* 建議在全域定義你需要的變數顏色 */
+:root {
+  --color-blue: #03a9f4;
+  --color-amber: #ffc107;
+  --color-green: #8bc34a;
+  --color-pink: #e91e63;
+
+  --node-bg: #ffffff;
+  --node-border: #ccc;
+  --node-shadow: rgba(0, 0, 0, 0.15);
+}
+
+/* 基本的節點卡片風格 */
+.custom-node {
+  display: flex;
+  flex-direction: column;
+  background: var(--node-bg);
+  border: 2px solid var(--node-border);
+  border-radius: 8px;
+  box-shadow: 0 4px 6px var(--node-shadow);
+  overflow: hidden;
+  min-width: 180px;
+  /* 動畫 */
+  transition: box-shadow 0.3s ease, transform 0.2s ease;
+}
+
+/* 滑鼠懸停效果 */
+.custom-node:hover {
+  box-shadow: 0 6px 10px var(--node-shadow);
+  transform: translateY(-2px);
+}
+
+/* 頂部彩色區塊 */
+.node-header {
+  display: flex;
+  align-items: center;
+  padding: 8px;
+  color: #fff; /* 文字顏色可根據需求改 */
+  font-weight: bold;
+}
+
+/* 狀態圖示（左側） */
+.status-icon {
+  margin-right: 6px;
+  font-size: 1.2rem;
+}
+
+/* 節點標題 */
+.node-label {
+  flex: 1;
+  text-align: left;
+}
+
+/* 工具區容器 */
+.tools-container {
+  display: flex;
+  flex-wrap: wrap;
+  padding: 6px 8px;
+  background: #f9f9f9;
+  border-top: 1px solid #eee;
+  border-bottom: 1px solid #eee;
+}
+
+/* 單個工具項目 */
+.tool-item {
+  display: flex;
+  align-items: center;
+  background: #fff;
+  border: 1px solid #ddd;
+  border-radius: 4px;
+  margin: 2px;
+  padding: 2px 6px;
+  font-size: 0.85rem;
+}
+
+/* 工具圖示 (emoji / icon) */
+.tool-icon {
+  margin-right: 4px;
+}
+
+/* 參數容器 */
+.params-container {
+  padding: 8px;
+  font-size: 0.85rem;
+}
+
+/* 單個參數項目 */
+.param-item {
+  margin-bottom: 4px;
+  display: flex;
+}
+
+/* 參數 key 與 value */
+.param-key {
+  font-weight: bold;
+  margin-right: 4px;
+}
+.param-value {
+  color: #333;
+}
+
+/* 連接點 (Handle) */
+.node-handle {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+}
+
+/* 狀態相關樣式：若需要特別的外觀可在這裡定義 */
+.custom-node.pending {
+  /* pending 狀態預設不做特別外觀，可自行加 */
+}
+.custom-node.inProgress {
+  animation: breathing 2s infinite;
+}
+.custom-node.completed {
+  opacity: 0.9;
+}
+
+/* 簡單呼吸燈動畫 (for inProgress) */
+@keyframes breathing {
+  0% {
+    box-shadow: 0 0 8px 2px rgba(0, 255, 0, 0.4);
+  }
+  50% {
+    box-shadow: 0 0 16px 4px rgba(0, 255, 0, 0.7);
+  }
+  100% {
+    box-shadow: 0 0 8px 2px rgba(0, 255, 0, 0.4);
+  }
+}
+
+.react-flow__node:focus {
+  outline: none;
+}

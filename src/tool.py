@@ -1,4 +1,5 @@
 # 標準函式庫
+from typing import Optional
 from music21 import *
 
 # 第三方函式庫
@@ -73,16 +74,54 @@ def generate_common_template(role: str, style: str, tempo: int, key: str, time_s
 import os
 import pickle
 
-TEMP_DIR = "temp"
+DEFAULT_TEMP_DIR = "temp"
 
-def save_to_temp(stage: str, data: dict):
-    if not os.path.exists(TEMP_DIR):
-        os.makedirs(TEMP_DIR)  # 如果資料夾不存在，創建它
-    with open(os.path.join(TEMP_DIR, f"{stage}.pkl"), "wb") as f:
+def save_to_temp(stage: str, data: dict, temp_dir: Optional[str] = None) -> str:
+    """
+    將數據保存到臨時目錄。
+
+    Args:
+        stage (str): 階段名稱，用於生成文件名。
+        data (dict): 要保存的數據。
+        temp_dir (Optional[str]): 臨時目錄路徑，如果為 None 則使用默認路徑。
+
+    Returns:
+        str: 保存文件的完整路徑。
+    """
+    # 使用提供的目錄或默認目錄
+    save_dir = temp_dir if temp_dir else DEFAULT_TEMP_DIR
+    
+    # 確保目錄存在
+    if not os.path.exists(save_dir):
+        os.makedirs(save_dir)  # 如果目錄不存在，創建它
+    
+    # 生成完整的文件路徑
+    file_path = os.path.join(save_dir, f"{stage}.pkl")
+    
+    # 保存數據
+    with open(file_path, "wb") as f:
         pickle.dump(data, f)
+    
+    return file_path
 
-def load_from_temp(stage: str) -> dict:
-    file_path = os.path.join(TEMP_DIR, f"{stage}.pkl")
+def load_from_temp(stage: str, temp_dir: Optional[str] = None) -> Optional[Dict]:
+    """
+    從臨時目錄加載數據。
+
+    Args:
+        stage (str): 階段名稱，用於找到對應文件。
+        temp_dir (Optional[str]): 臨時目錄路徑，如果為 None 則使用默認路徑。
+
+    Returns:
+        Optional[Dict]: 加載的數據，如果文件不存在則返回 None。
+    """
+    # 使用提供的目錄或默認目錄
+    load_dir = temp_dir if temp_dir else DEFAULT_TEMP_DIR
+    
+    # 生成完整的文件路徑
+    file_path = os.path.join(load_dir, f"{stage}.pkl")
+    
+    # 檢查文件是否存在並加載
     if os.path.exists(file_path):
         with open(file_path, "rb") as f:
             return pickle.load(f)
